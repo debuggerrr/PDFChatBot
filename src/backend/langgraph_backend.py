@@ -10,12 +10,14 @@ from langchain_community.document_loaders import PyPDFLoader
 from langchain_chroma import Chroma
 from langchain.schema.runnable import RunnableLambda
 from langgraph.checkpoint.memory import InMemorySaver
+from langchain_core.messages import BaseMessage
 import operator
 load_dotenv()
 
 class ResponseState(TypedDict):
     user_query: str
     model_response: str
+    messages: Annotated[list[BaseMessage], operator.add]
 
 def page_loader(path:str):
     loader = PyPDFLoader(path)
@@ -49,12 +51,17 @@ def add_documents_to_vector_store(chunks)-> None:
 def prompt_template() -> PromptTemplate:
     prompt = PromptTemplate(
     template="""
-      You are a helpful assistant.
-      Answer ONLY from the provided context.
-      If the context is insufficient, just say you don't know.
-        
-      {context}
-      Question: {question}
+     You are a helpful assistant.
+
+    Use the context below to help answer the question.
+
+    If the context is useful, base your answer on it. If it's not relevant or missing, use your general knowledge to help the user.
+
+    Context:
+    {context}
+
+    Question: {question}
+
     """,
     input_variables = ['context', 'question'],
     
@@ -78,6 +85,7 @@ def rag_chain(retriever, llm, prompt):
     return rag_chain
 
 def chat_bot(state:ResponseState):
+    messages = state.get("messages", [])
 
     llm = ChatOpenAI(model="gpt-4o-mini")
 
@@ -101,8 +109,3 @@ graph.add_edge("chat_bot", END)
 
 checkpointer = InMemorySaver()
 workflow = graph.compile(checkpointer=checkpointer)
-
-CONFIG = {'configurable': {'thread_id': 'thread-1'}}
-
-result = workflow.invoke({"user_query": "Who was adored by Jitendra Chouksey?"}, config=CONFIG)
-print(result["model_response"])
